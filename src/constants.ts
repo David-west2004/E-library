@@ -1,14 +1,75 @@
 import { Book, BookCategory } from './types';
 
 export const DEPARTMENTS = [
-  'Computer Science',
-  'Mathematics',
-  'Physics',
-  'Engineering',
-  'Biological Sciences',
+  // Faculty of Social Sciences
   'Economics',
-  'Accounting',
+  'Sociology',
+  'Geography',
   'Political Science',
+  'Psychology',
+
+  // Faculty of Arts
+  'English Language',
+  'Portuguese',
+  'Linguistics',
+  'History and International Studies',
+  'Music',
+  'French',
+  'Theatre Art',
+  'Foreign Language',
+  'Christian Religion',
+  'Islamic Religion',
+  'Arabic',
+
+  // Faculty of Sciences
+  'Computer Science',
+  'Chemistry',
+  'Botany',
+  'Zoology',
+  'Biochemistry',
+  'Medicine and Surgery',
+  'Nursing',
+  'Mathematics',
+  'Pharmacy',
+  'Pharmacology',
+  'Medical Laboratory Science',
+  'Fishery',
+  'Physics',
+  'Chemical Engineering',
+  'Mechanical Engineering',
+
+  // Faculty of Communication
+  'Broadcasting',
+  'Journalism',
+  'Public Relations and Advertisement',
+
+  // Faculty of Education
+  'Educational Foundations',
+  'Educational Management',
+  'Human Kinetic & Health Education',
+  'Lang, Arts AND Sciences',
+  'Science and Tech. Education',
+
+  // Schools of Transport
+  'Transport Management',
+  'Transport Planning',
+  'Transport Technology',
+
+  // Faculty of Law
+  'Common Law',
+  'Commercial Law',
+  'Islamic Law',
+  'Criminal Law',
+
+  // Faculty of Management Science
+  'Accounting',
+  'Business Administration',
+  'Public Administration',
+  'Insurance',
+  'Marketing',
+  'Management Technology',
+  'Industrial Relations',
+  'Local Government Administration',
 ];
 
 export const LEVELS = ['100L', '200L', '300L', '400L', '500L', 'Postgraduate'];
@@ -66,7 +127,7 @@ export const INITIAL_BOOKS: Book[] = [
     description: 'Fundamentals of digital systems and logic gates.',
     coverUrl: 'https://picsum.photos/seed/logic/400/600',
     downloadUrl: '#',
-    department: 'Engineering',
+    department: 'Mechanical Engineering',
     courseCode: 'EEG 202',
     courseTitle: 'Digital Electronics',
     level: '200L',

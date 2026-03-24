@@ -57,7 +57,6 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
-  const [selectedType, setSelectedType] = useState<'Course Material' | 'Past Question' | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
   const [revokedModal, setRevokedModal] = useState<{ message: string } | null>(null);
   const [confirmModal, setConfirmModal] = useState<{ 
@@ -84,7 +83,6 @@ export default function App() {
 
   useEffect(() => {
     setSelectedCourse(null);
-    setSelectedType(null);
   }, [filters.category]);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -672,8 +670,22 @@ export default function App() {
       setUploadProgress('Saving record...');
       const category = formData.get('category') as BookCategory;
       const title = category === BookCategory.ACADEMIC 
-        ? formData.get('course_title') 
-        : formData.get('title');
+        ? formData.get('course_title') as string
+        : formData.get('title') as string;
+
+      // Auto-detect material type for academic materials
+      let detectedMaterialType = 'Course Material';
+      if (category === BookCategory.ACADEMIC) {
+        const lowerTitle = title.toLowerCase();
+        const lowerCourseCode = (formData.get('course_code') as string || '').toLowerCase();
+        const lowerFileName = file.name.toLowerCase();
+        
+        if (lowerTitle.includes('pq') || lowerTitle.includes('past question') || lowerTitle.includes('exam') || lowerTitle.includes('test') || lowerTitle.includes('quiz') ||
+            lowerCourseCode.includes('pq') || lowerCourseCode.includes('past question') ||
+            lowerFileName.includes('pq') || lowerFileName.includes('past question') || lowerFileName.includes('exam') || lowerFileName.includes('test') || lowerFileName.includes('quiz')) {
+          detectedMaterialType = 'Past Question';
+        }
+      }
 
       const bookData = {
         title,
@@ -685,7 +697,7 @@ export default function App() {
         level: formData.get('level'),
         course_code: formData.get('course_code'),
         course_title: formData.get('course_title'),
-        material_type: formData.get('material_type') || 'Course Material'
+        material_type: detectedMaterialType
       };
 
       const res = await fetch('/api/admin/books', {
@@ -785,15 +797,33 @@ export default function App() {
     if (!editingBook) return;
 
     const formData = new FormData(e.currentTarget);
+    const category = formData.get('category') as string;
+    const title = formData.get('title') as string;
+    const courseCode = formData.get('course_code') as string || '';
+
+    // Auto-detect material type for academic materials
+    let detectedMaterialType = editingBook.materialType || 'Course Material';
+    if (category === BookCategory.ACADEMIC) {
+      const lowerTitle = title.toLowerCase();
+      const lowerCourseCode = courseCode.toLowerCase();
+      
+      if (lowerTitle.includes('pq') || lowerTitle.includes('past question') || lowerTitle.includes('exam') || lowerTitle.includes('test') || lowerTitle.includes('quiz') ||
+          lowerCourseCode.includes('pq') || lowerCourseCode.includes('past question')) {
+        detectedMaterialType = 'Past Question';
+      } else {
+        detectedMaterialType = 'Course Material';
+      }
+    }
+
     const updates: any = {
-      title: formData.get('title'),
+      title,
       author: formData.get('author'),
-      category: formData.get('category'),
+      category,
       department: formData.get('department'),
       level: formData.get('level'),
-      course_code: formData.get('course_code'),
+      course_code: courseCode,
       course_title: formData.get('course_title'),
-      material_type: formData.get('material_type'),
+      material_type: detectedMaterialType,
       description: formData.get('description'),
     };
 
@@ -915,26 +945,6 @@ export default function App() {
     
     return Object.values(groups);
   }, [filteredBooks, filters.category]);
-
-  const groupedTypes = useMemo(() => {
-    if (!selectedCourse) return [];
-    
-    const types: Record<string, { name: string, count: number }> = {
-      'Course Material': { name: 'Course Material', count: 0 },
-      'Past Question': { name: 'Past Question', count: 0 }
-    };
-    
-    filteredBooks
-      .filter(b => b.courseCode === selectedCourse)
-      .forEach(book => {
-        const type = book.materialType || 'Course Material';
-        if (types[type]) {
-          types[type].count++;
-        }
-      });
-    
-    return Object.values(types).filter(t => t.count > 0);
-  }, [filteredBooks, selectedCourse]);
 
   const filteredUsers = useMemo(() => {
     const filtered = !userSearch 
@@ -1774,13 +1784,6 @@ export default function App() {
                             <input name="course_title" required className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none" placeholder="Intro to CS" />
                           </div>
                         </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Material Type</label>
-                          <select name="material_type" required className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none">
-                            <option value="Course Material">Course Material</option>
-                            <option value="Past Question">Past Question</option>
-                          </select>
-                        </div>
                       </div>
                     )}
 
@@ -1846,7 +1849,7 @@ export default function App() {
                                   <h4 className="font-bold text-slate-800 truncate text-sm">{book.title}</h4>
                                   <div className="flex items-center gap-2 mt-1">
                                     <span className="text-[10px] font-medium text-slate-400 truncate">
-                                      {book.materialType || 'Material'} • {book.department || 'General'}
+                                      {book.department || 'General'}
                                     </span>
                                   </div>
                                 </div>
@@ -1952,11 +1955,10 @@ export default function App() {
             <div className="flex-1">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-4">
-                  {(selectedCourse || selectedType) && (
+                  {selectedCourse && (
                     <button 
                       onClick={() => {
-                        if (selectedType) setSelectedType(null);
-                        else setSelectedCourse(null);
+                        setSelectedCourse(null);
                       }}
                       className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-500"
                     >
@@ -1970,27 +1972,19 @@ export default function App() {
                           className="text-emerald-600 cursor-pointer hover:underline"
                           onClick={() => {
                             setSelectedCourse(null);
-                            setSelectedType(null);
                           }}
                         >
                           {selectedCourse}
                         </span>
-                        {selectedType && (
-                          <>
-                            <ChevronRight className="w-4 h-4 text-slate-300" />
-                            <span className="text-slate-800">{selectedType}s</span>
-                          </>
-                        )}
-                        {!selectedType && <span className="text-slate-400 font-normal ml-2">Directory</span>}
+                        <span className="text-slate-400 font-normal ml-2">Files</span>
                       </div>
                     ) : (
                       filters.category === 'All' ? 'All Resources' : filters.category
                     )}
                     <span className="ml-2 text-sm font-normal text-slate-400">
-                      ({selectedType ? filteredBooks.filter(b => b.courseCode === selectedCourse && (b.materialType || 'Course Material') === selectedType).length : 
-                        (selectedCourse ? groupedTypes.length : 
-                          (filters.category === BookCategory.ACADEMIC ? groupedCourses.length : filteredBooks.length))} 
-                      {selectedType || filters.category !== BookCategory.ACADEMIC ? ' items' : (selectedCourse ? ' categories' : ' courses')})
+                      ({selectedCourse ? filteredBooks.filter(b => b.courseCode === selectedCourse).length : 
+                        (filters.category === BookCategory.ACADEMIC ? groupedCourses.length : filteredBooks.length)} 
+                      {filters.category !== BookCategory.ACADEMIC ? ' items' : (selectedCourse ? ' items' : ' courses')})
                     </span>
                   </h2>
                 </div>
@@ -2041,52 +2035,12 @@ export default function App() {
                     </motion.div>
                   ))}
 
-                  {/* Level 2: Selected Course - Grouped Types View */}
-                  {selectedCourse && !selectedType && groupedTypes.map((type) => (
-                    <motion.div
-                      layout
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      key={type.name}
-                      onClick={() => setSelectedType(type.name as any)}
-                      className="group cursor-pointer bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-xl hover:shadow-emerald-900/5 transition-all duration-300"
-                    >
-                      <div className="relative aspect-[3/4] overflow-hidden bg-slate-50 flex items-center justify-center">
-                        <div className="bg-emerald-100 p-8 rounded-full group-hover:scale-110 transition-transform duration-500">
-                          {type.name === 'Past Question' ? (
-                            <Clock className="w-16 h-16 text-emerald-600" />
-                          ) : (
-                            <BookOpen className="w-16 h-16 text-emerald-600" />
-                          )}
-                        </div>
-                        <div className="absolute inset-0 bg-emerald-900/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <div className="bg-white text-emerald-700 px-4 py-2 rounded-xl font-bold flex items-center gap-2">
-                            <Plus className="w-4 h-4" />
-                            View Files
-                          </div>
-                        </div>
-                        <div className="absolute top-3 left-3 flex flex-wrap gap-2">
-                          <span className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white">
-                            {type.count} {type.count === 1 ? 'File' : 'Files'}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="p-3 sm:p-6 text-center">
-                        <h3 className="text-sm sm:text-lg font-bold text-slate-800 group-hover:text-emerald-600 transition-colors line-clamp-1">
-                          {type.name}s
-                        </h3>
-                        <p className="text-[10px] sm:text-sm text-slate-400 mt-0.5 sm:mt-1">Directory for {selectedCourse}</p>
-                      </div>
-                    </motion.div>
-                  ))}
-
-                  {/* Level 3: Individual Items View (Novels or Selected Type) */}
-                  {(filters.category !== BookCategory.ACADEMIC || selectedType) && 
+                  {/* Level 3: Individual Items View (Novels or Selected Course) */}
+                  {(filters.category !== BookCategory.ACADEMIC || selectedCourse) && 
                     filteredBooks
                       .filter(b => {
                         if (filters.category === BookCategory.CHRISTIAN_NOVEL) return true;
-                        return b.courseCode === selectedCourse && (b.materialType || 'Course Material') === selectedType;
+                        return b.courseCode === selectedCourse;
                       })
                       .map((book) => (
                     <motion.a
@@ -2117,6 +2071,11 @@ export default function App() {
                           <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${book.category === BookCategory.ACADEMIC ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'}`}>
                             {book.category === BookCategory.ACADEMIC ? 'Academic' : 'Novel'}
                           </span>
+                          {book.category === BookCategory.ACADEMIC && book.materialType && (
+                            <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${book.materialType === 'Past Question' ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'}`}>
+                              {book.materialType}
+                            </span>
+                          )}
                           {book.level && (
                             <span className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-white/90 backdrop-blur text-slate-700">
                               {book.level}
@@ -2152,12 +2111,8 @@ export default function App() {
               </div>
 
               {((filters.category === BookCategory.ACADEMIC && !selectedCourse && groupedCourses.length === 0) || 
-                (selectedCourse && !selectedType && groupedTypes.length === 0) ||
-                ((filters.category !== BookCategory.ACADEMIC || selectedType) && 
-                  filteredBooks.filter(b => {
-                    if (filters.category === BookCategory.CHRISTIAN_NOVEL) return true;
-                    return b.courseCode === selectedCourse && (b.materialType || 'Course Material') === selectedType;
-                  }).length === 0)) && (
+                (selectedCourse && filteredBooks.filter(b => b.courseCode === selectedCourse).length === 0) ||
+                (filters.category === BookCategory.CHRISTIAN_NOVEL && filteredBooks.length === 0)) && (
                 <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-dashed border-slate-200">
                   <div className="bg-slate-50 p-4 rounded-full mb-4">
                     <BookIcon className="w-8 h-8 text-slate-300" />
@@ -2168,7 +2123,6 @@ export default function App() {
                     onClick={() => {
                       setFilters({ search: '', category: 'All', department: 'All', level: 'All' });
                       setSelectedCourse(null);
-                      setSelectedType(null);
                     }}
                     className="mt-4 text-emerald-600 font-medium hover:underline text-sm"
                   >
@@ -2475,18 +2429,6 @@ export default function App() {
                     >
                       <option value={BookCategory.ACADEMIC}>Academic</option>
                       <option value={BookCategory.CHRISTIAN_NOVEL}>Christian Novel</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 ml-1">Material Type</label>
-                    <select 
-                      name="material_type"
-                      defaultValue={editingBook.materialType}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none"
-                    >
-                      <option value="Course Material">Course Material</option>
-                      <option value="Past Question">Past Question</option>
                     </select>
                   </div>
 
