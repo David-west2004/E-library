@@ -260,12 +260,81 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('dlcf_user');
-    setView('login');
-    setShowPassword(false);
-    setIsNavOpen(false);
+  // Updated handleLogout - Clears all sessions and data
+  const handleLogout = async () => {
+    setLoading(true);
+    
+    try {
+      // Call server to invalidate session
+      if (user) {
+        const response = await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id }),
+        });
+        
+        if (!response.ok) {
+          console.warn('Server logout failed:', await response.text());
+        }
+      }
+      
+      // Clear all client-side data
+      // 1. User data
+      setUser(null);
+      localStorage.removeItem('dlcf_user');
+      localStorage.removeItem('dlcf_session');
+      
+      // 2. Application state
+      setView('login');
+      setShowPassword(false);
+      setIsNavOpen(false);
+      setIsSidebarOpen(false);
+      setRevokedModal(null);
+      setConfirmModal(null);
+      setSelectedCourse(null);
+      setEditingBook(null);
+      
+      // 3. Clear all data
+      setBooks([]);
+      setAllUsers([]);
+      setAdminLinks([]);
+      setFilters({
+        search: '',
+        category: BookCategory.ACADEMIC,
+        department: 'All',
+        level: 'All',
+      });
+      
+      // 4. Clear browser storage
+      sessionStorage.clear();
+      
+      // 5. Clear any cached data
+      if ('caches' in window) {
+        try {
+          const cacheNames = await caches.keys();
+          await Promise.all(
+            cacheNames
+              .filter(name => name.includes('dlcf') || name.includes('e-library'))
+              .map(name => caches.delete(name))
+          );
+        } catch (err) {
+          console.warn('Could not clear cache:', err);
+        }
+      }
+      
+      // 6. Show success message
+      showToast('Signed out successfully');
+      
+    } catch (err) {
+      console.error('Logout error:', err);
+      // Even on error, clear local data
+      localStorage.removeItem('dlcf_user');
+      setUser(null);
+      setView('login');
+      showToast('Signed out', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleForgotPassword = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -1235,6 +1304,23 @@ export default function App() {
             </button>
           </form>
           
+          <div className="mt-6 pt-6 border-t border-slate-100">
+            <button 
+              onClick={() => {
+                setConfirmModal({
+                  type: 'logout',
+                  title: 'Sign Out',
+                  message: 'Are you sure you want to sign out?',
+                  action: handleLogout
+                });
+              }}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-rose-50 text-rose-600 font-bold rounded-2xl hover:bg-rose-100 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Sign Out
+            </button>
+          </div>
+
           <button 
             onClick={() => setView(user?.isAdmin ? 'admin' : 'library')}
             className="w-full mt-4 text-sm text-slate-500 hover:text-emerald-600 transition-colors"
@@ -1334,7 +1420,14 @@ export default function App() {
                 </button>
                 <div className="w-px h-3 bg-slate-200" />
                 <button 
-                  onClick={handleLogout}
+                  onClick={() => {
+                    setConfirmModal({
+                      type: 'logout',
+                      title: 'Sign Out',
+                      message: 'Are you sure you want to sign out of your account? All session data will be cleared.',
+                      action: handleLogout
+                    });
+                  }}
                   className="p-1 text-slate-400 hover:text-red-500 transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
@@ -2225,7 +2318,7 @@ export default function App() {
                     setConfirmModal({
                       type: 'logout',
                       title: 'Sign Out',
-                      message: 'Are you sure you want to sign out of your account?',
+                      message: 'Are you sure you want to sign out of your account? All session data will be cleared.',
                       action: handleLogout
                     });
                   }}
