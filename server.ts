@@ -27,7 +27,7 @@ const getTransporter = () => {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
-    connectionTimeout: 10000, // 10 seconds
+    connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 10000,
   });
@@ -187,7 +187,6 @@ async function startServer() {
         });
       }
 
-      // Send login notification (async)
       sendLoginNotification(user.email, user.name);
 
       res.json({ user: { 
@@ -208,7 +207,6 @@ async function startServer() {
     try {
       const supabase = getSupabase();
       
-      // Validate token
       const { data: link, error: linkError } = await supabase
         .from('registration_links')
         .select('*')
@@ -219,14 +217,12 @@ async function startServer() {
         return res.status(400).json({ error: 'Invalid registration link' });
       }
 
-      // Create user (Automatically approved)
       const { error: regError } = await supabase
         .from('users')
         .insert([{ id: uuidv4(), email, password, name, is_approved: true, is_admin: false }]);
       
       if (regError) throw regError;
 
-      // Send welcome email (async)
       sendWelcomeEmail(email, name);
       
       res.json({ success: true });
@@ -300,7 +296,6 @@ async function startServer() {
     try {
       const supabase = getSupabase();
       
-      // Check if email is already taken by another user
       if (email) {
         const { data: existingUser } = await supabase
           .from('users')
@@ -388,11 +383,9 @@ async function startServer() {
     try {
       const supabase = getSupabase();
       
-      // Get user info
       const { data: user } = await supabase.from('users').select('*').eq('id', userId).single();
       if (!user) return res.status(404).json({ error: 'User not found' });
 
-      // If superadmin, check if they are the last one
       if (user.is_super_admin) {
         const { count } = await supabase
           .from('users')
@@ -411,7 +404,6 @@ async function startServer() {
       
       if (error) throw error;
 
-      // Send notification
       if (user && process.env.SMTP_HOST) {
         const transporter = getTransporter();
         await transporter.sendMail({
@@ -443,7 +435,6 @@ async function startServer() {
     try {
       const supabase = getSupabase();
       
-      // Verify requester is superadmin
       const { data: requester, error: reqError } = await supabase.from('users').select('*').eq('id', requesterId).single();
       
       if (reqError || !requester) {
@@ -454,7 +445,6 @@ async function startServer() {
         return res.status(403).json({ error: 'Access denied. Only Super Administrators can demote other admins.' });
       }
 
-      // Get user info for email
       const { data: user } = await supabase.from('users').select('email, name').eq('id', userId).single();
 
       const { error } = await supabase
@@ -464,7 +454,6 @@ async function startServer() {
       
       if (error) throw error;
 
-      // Send notification
       if (user && process.env.SMTP_HOST) {
         const transporter = getTransporter();
         await transporter.sendMail({
@@ -496,7 +485,6 @@ async function startServer() {
     try {
       const supabase = getSupabase();
       
-      // Verify requester is superadmin
       const { data: requester, error: reqError } = await supabase.from('users').select('*').eq('id', requesterId).single();
       
       if (reqError || !requester) {
@@ -507,7 +495,6 @@ async function startServer() {
         return res.status(403).json({ error: 'Access denied. Only Super Administrators can promote others to superadmin.' });
       }
 
-      // Get user info
       const { data: user } = await supabase.from('users').select('email, name').eq('id', userId).single();
       if (!user) return res.status(404).json({ error: 'User not found' });
 
@@ -518,7 +505,6 @@ async function startServer() {
       
       if (error) throw error;
 
-      // Send notification
       if (process.env.SMTP_HOST) {
         const transporter = getTransporter();
         await transporter.sendMail({
@@ -550,7 +536,6 @@ async function startServer() {
     try {
       const supabase = getSupabase();
       
-      // Get user info
       const { data: user } = await supabase.from('users').select('email, name').eq('id', userId).single();
       if (!user) return res.status(404).json({ error: 'User not found' });
 
@@ -561,7 +546,6 @@ async function startServer() {
       
       if (error) throw error;
 
-      // Send notification
       if (process.env.SMTP_HOST) {
         const transporter = getTransporter();
         await transporter.sendMail({
@@ -607,7 +591,7 @@ async function startServer() {
   app.post('/api/admin/generate-link', async (req, res) => {
     const token = uuidv4();
     const expiresAt = new Date();
-    expiresAt.setFullYear(expiresAt.getFullYear() + 100); // 100 years expiry (effectively permanent)
+    expiresAt.setFullYear(expiresAt.getFullYear() + 100);
     
     try {
       const supabase = getSupabase();
@@ -663,7 +647,6 @@ async function startServer() {
     }
   });
 
-  // Helper to ensure bucket exists and has correct settings
   async function ensureBucket(supabase: any) {
     const bucketName = 'materials';
     try {
@@ -672,7 +655,7 @@ async function startServer() {
       
       const bucketOptions = {
         public: true,
-        fileSizeLimit: 209715200, // 200MB
+        fileSizeLimit: 209715200,
       };
 
       if (!exists) {
@@ -682,7 +665,6 @@ async function startServer() {
           console.warn('Could not create bucket automatically:', createError.message);
         }
       } else {
-        // Update existing bucket to ensure it has the 200MB limit
         const { error: updateError } = await supabase.storage.updateBucket(bucketName, bucketOptions);
         if (updateError) {
           console.warn('Could not update bucket settings:', updateError.message);
@@ -693,9 +675,7 @@ async function startServer() {
     }
   }
 
-  // Helper to insert book with fallback for missing columns
   async function insertBookResilient(supabase: any, bookData: any) {
-    // Try full insert first
     const { data, error } = await supabase
       .from('books')
       .insert([bookData])
@@ -704,7 +684,6 @@ async function startServer() {
 
     if (!error) return { data, error: null };
 
-    // If error is about missing columns, try fallback
     if (error.message?.includes('Could not find') || error.code === '42703') {
       console.warn('[Supabase] Missing columns detected, falling back to description metadata');
       
@@ -720,7 +699,6 @@ async function startServer() {
         }
       });
 
-      // Pack metadata into description
       const metaString = `JSON_META:${JSON.stringify(metadata)}`;
       fallbackData.description = fallbackData.description 
         ? `${fallbackData.description}\n\n${metaString}`
@@ -736,7 +714,6 @@ async function startServer() {
     return { data: null, error };
   }
 
-  // Books Management
   app.get('/api/books', async (req, res) => {
     try {
       const supabase = getSupabase();
@@ -757,7 +734,6 @@ async function startServer() {
       const supabase = getSupabase();
       const { title, category, course_code } = req.body;
 
-      // Duplicate Check
       const { data: existingBooks } = await supabase
         .from('books')
         .select('id')
@@ -821,7 +797,6 @@ async function startServer() {
     }
   });
 
-  // File Upload to Supabase Storage
   app.post('/api/admin/upload', upload.single('file'), async (req: any, res) => {
     console.log(`[Upload] Received upload request: ${req.file?.originalname} (${req.file?.size} bytes)`);
     try {
@@ -877,7 +852,6 @@ async function startServer() {
       return res.status(400).json({ error: 'Folder ID is required.' });
     }
 
-    // Extract ID from URL if user pasted a full link
     if (folderId.includes('drive.google.com')) {
       const match = folderId.match(/\/folders\/([a-zA-Z0-9_-]+)/);
       if (match) {
@@ -890,7 +864,6 @@ async function startServer() {
       const drive = google.drive({ version: 'v3', auth: apiKey });
       
       console.log('[Mass Upload] Fetching file list from GDrive...');
-      // List files in the folder
       const response = await drive.files.list({
         q: `'${folderId}' in parents and mimeType = 'application/pdf' and trashed = false`,
         fields: 'files(id, name, size, mimeType)',
@@ -916,7 +889,6 @@ async function startServer() {
 
       for (const file of files) {
         try {
-          // Download from GDrive
           const fileResponse = await drive.files.get(
             { fileId: file.id!, alt: 'media' },
             { responseType: 'arraybuffer' }
@@ -926,7 +898,6 @@ async function startServer() {
           const fileName = `${uuidv4()}-${sanitizedOriginalName}`;
           const buffer = Buffer.from(fileResponse.data as ArrayBuffer);
 
-          // Upload to Supabase
           const { error: uploadError } = await supabase.storage
             .from(bucketName)
             .upload(fileName, buffer, {
@@ -940,20 +911,15 @@ async function startServer() {
             .from(bucketName)
             .getPublicUrl(fileName);
 
-          // Create book record
-          // Use manual course code and title from form for the directory grouping
-          const courseCode = manualCourseCode || 'GENERAL';
-          // If it's a Christian Novel, use filename as title and clear courseCode
           let title = file.name?.replace('.pdf', '').trim() || 'Untitled Material';
-          let finalCourseCode = courseCode;
-          let finalCourseTitle = manualCourseTitle || courseCode; // Use manual title if provided, else fallback to code
+          let finalCourseCode = manualCourseCode || 'GENERAL';
+          let finalCourseTitle = manualCourseTitle || finalCourseCode;
 
           if (category === 'Christian Novel') {
             finalCourseCode = ''; 
             finalCourseTitle = '';
           }
 
-          // Duplicate Check
           const { data: existingBooks } = await supabase
             .from('books')
             .select('id')
@@ -962,12 +928,11 @@ async function startServer() {
             .eq('course_code', finalCourseCode || '');
 
           if (existingBooks && existingBooks.length > 0) {
-            console.log(`[Mass Upload] Skipping duplicate: ${title} (${courseCode})`);
+            console.log(`[Mass Upload] Skipping duplicate: ${title} (${finalCourseCode})`);
             results.push({ name: file.name, status: 'skipped', message: 'Duplicate found' });
             continue;
           }
 
-          // Auto-detect material type for academic materials
           let detectedMaterialType = materialType || 'Course Material';
           if (category === 'Academic Materials') {
             const lowerName = file.name?.toLowerCase() || '';
@@ -993,7 +958,7 @@ async function startServer() {
             course_title: finalCourseTitle,
             material_type: detectedMaterialType,
             download_url: publicUrl,
-            cover_url: 'https://picsum.photos/seed/book/400/600', // Default cover for mass upload
+            cover_url: 'https://picsum.photos/seed/book/400/600',
             description: `Mass uploaded from Google Drive: ${file.name}`
           };
 
@@ -1015,10 +980,9 @@ async function startServer() {
     }
   });
 
-  // Apply API error handler to all /api routes
   app.use('/api', apiErrorHandler);
 
-  // Vite middleware for development
+  // Serve static files - PRODUCTION READY
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -1026,14 +990,19 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(__dirname, 'dist')));
+    // Serve static files from dist/client
+    const clientDistPath = path.join(__dirname, 'client');
+    console.log(`[Server] Serving static files from: ${clientDistPath}`);
+    
+    app.use(express.static(clientDistPath));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+      res.sendFile(path.join(clientDistPath, 'index.html'));
     });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   });
 }
 
