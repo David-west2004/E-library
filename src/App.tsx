@@ -41,10 +41,177 @@ import { INITIAL_BOOKS, DEPARTMENTS, LEVELS } from './constants';
 // Set worker source for pdfjs
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
+// Slideshow Images
+import slide1 from '../assets/20260611_193907.jpg';
+import slide2 from '../assets/20260611_200000.jpg';
+import slide3 from '../assets/InShot_20260614_104539506.jpg';
+import slide4 from '../assets/InShot_20260614_104633849.jpg';
+import slide5 from '../assets/InShot_20260622_200418401.jpg';
+import dlcfLogo from '../assets/dlcf.jpeg';
+
+const SLIDES = [
+  {
+    image: slide1,
+    title: "Access Academic Excellence",
+    description: "Explore a vast collection of academic books, lecture notes, and resources tailored for campus success."
+  },
+  {
+    image: slide2,
+    title: "Spiritual Growth & Guidance",
+    description: "Nurture your faith with spiritual books, messages, and publications readily available at your fingertips."
+  },
+  {
+    image: slide3,
+    title: "Past Questions Repository",
+    description: "Prepare thoroughly with organized past questions and solutions from various departments and levels."
+  },
+  {
+    image: slide4,
+    title: "Seamless Digital Reading",
+    description: "Read, study, and reference your books anytime, anywhere, with our fast and responsive reader."
+  },
+  {
+    image: slide5,
+    title: "Connect & Grow",
+    description: "Join the DLCF community in pursuing academic distinction and spiritual integrity."
+  }
+];
+
+function AuthSlideshow({ 
+  showText = true, 
+  onContinue 
+}: { 
+  showText?: boolean; 
+  onContinue?: () => void; 
+}) {
+  const [current, setCurrent] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrent((prev) => (prev + 1) % SLIDES.length);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="relative w-full h-full overflow-hidden flex flex-col justify-end p-6 sm:p-10 md:p-12 text-white">
+      {/* Background Slides */}
+      <div className="absolute inset-0 z-0">
+        <AnimatePresence mode="wait">
+          <motion.img
+            key={current}
+            src={SLIDES[current].image}
+            initial={{ opacity: 0, scale: 1.05 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 1.2, ease: "easeInOut" }}
+            className="absolute inset-0 w-full h-full object-cover animate-fade-in"
+            alt="Slideshow Background"
+          />
+        </AnimatePresence>
+        {/* Gradient Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-900/40 to-slate-950/20" />
+      </div>
+
+      {showText && (
+        <>
+          {/* Slide Text Content */}
+          <div className="relative z-10 max-w-lg mb-8">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={current}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+              >
+                <span className="inline-block bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full mb-4">
+                  DLCF E-Library
+                </span>
+                <h2 className="text-3xl font-extrabold md:text-4xl leading-tight mb-4 tracking-tight drop-shadow-md">
+                  {SLIDES[current].title}
+                </h2>
+                <p className="text-slate-200 text-sm md:text-base leading-relaxed drop-shadow-xs">
+                  {SLIDES[current].description}
+                </p>
+              </motion.div>
+            </AnimatePresence>
+          </div>
+
+          {/* Slide Indicators & Continue Container */}
+          <div className="relative z-10 flex flex-col gap-6">
+            {/* Slide Indicators */}
+            <div className="flex gap-2">
+              {SLIDES.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => setCurrent(index)}
+                  className={`h-2.5 rounded-full transition-all duration-300 cursor-pointer ${
+                    index === current ? 'w-8 bg-emerald-50' : 'w-2.5 bg-white/40 hover:bg-white/60'
+                  }`}
+                  aria-label={`Go to slide ${index + 1}`}
+                />
+              ))}
+            </div>
+
+            {/* Continue Button for Mobile */}
+            {onContinue && (
+              <button
+                onClick={onContinue}
+                className="w-full sm:max-w-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 px-6 rounded-2xl shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2 group transition-all cursor-pointer active:scale-95 text-sm uppercase tracking-wider"
+              >
+                <span>Continue</span>
+                <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+interface AuthLayoutProps {
+  children: React.ReactNode;
+  showMobileAuth: boolean;
+  onContinueMobile: () => void;
+}
+
+function AuthLayout({ children, showMobileAuth, onContinueMobile }: AuthLayoutProps) {
+
+  return (
+    <div className="min-h-screen relative overflow-hidden bg-slate-950 flex flex-col md:grid md:grid-cols-12">
+      {/* Left Column: Full-height slideshow for screens md and up */}
+      <div className="hidden md:block md:col-span-7 lg:col-span-8 relative overflow-hidden h-screen">
+        <AuthSlideshow showText={true} />
+      </div>
+
+      {/* Right Column: Centered form container */}
+      <div className="col-span-12 md:col-span-5 lg:col-span-4 relative flex items-center justify-center p-4 sm:p-8 md:p-12 min-h-screen bg-slate-950 md:bg-slate-900/40 border-l border-slate-800/30">
+        {/* On mobile (<md), render the slideshow as background with text/indicators based on showMobileAuth */}
+        <div className="absolute inset-0 z-0 md:hidden">
+          <AuthSlideshow showText={!showMobileAuth} onContinue={onContinueMobile} />
+          {showMobileAuth && (
+            <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-[2px]" />
+          )}
+        </div>
+
+        {/* Form content container */}
+        <div className={`relative z-10 w-full max-w-md ${showMobileAuth ? 'block' : 'hidden md:block'}`}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [view, setView] = useState<'login' | 'register' | 'library' | 'admin' | 'forgot-password' | 'profile'>('login');
   const [regToken, setRegToken] = useState<string | null>(null);
+  const [showMobileAuth, setShowMobileAuth] = useState(() => {
+    return localStorage.getItem('dlcf_slideshow_seen') === 'true';
+  });
   
   // Library State
   const [books, setBooks] = useState<Book[]>([]);
@@ -1037,16 +1204,16 @@ export default function App() {
 
   if (view === 'login') {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <AuthLayout showMobileAuth={showMobileAuth} onContinueMobile={() => { setShowMobileAuth(true); localStorage.setItem('dlcf_slideshow_seen', 'true'); }}>
         <Toast />
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-md bg-white rounded-3xl shadow-xl shadow-slate-200/50 p-8 border border-slate-100"
+          className="w-full bg-white/95 backdrop-blur-md rounded-3xl shadow-xl shadow-slate-200/40 p-8 border border-slate-100/50"
         >
           <div className="flex flex-col items-center mb-8">
-            <div className="bg-emerald-600 p-3 rounded-2xl mb-4 shadow-lg shadow-emerald-200">
-              <Library className="w-8 h-8 text-white" />
+            <div className="w-16 h-16 rounded-2xl mb-4 shadow-lg overflow-hidden border-2 border-emerald-500 bg-white flex items-center justify-center">
+              <img src={dlcfLogo} alt="DLCF Logo" className="w-full h-full object-cover" />
             </div>
             <h1 className="text-2xl font-bold text-slate-800">Welcome Back</h1>
             <p className="text-slate-500 text-sm">Sign in to access the DLCF E-Library</p>
@@ -1088,7 +1255,7 @@ export default function App() {
             </div>
             <button 
               type="submit"
-              className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all active:scale-[0.98]"
+              className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all active:scale-[0.98] cursor-pointer"
             >
               Sign In
             </button>
@@ -1097,7 +1264,7 @@ export default function App() {
           <div className="mt-4 text-center">
             <button 
               onClick={() => setView('forgot-password')}
-              className="text-sm text-slate-500 hover:text-emerald-600 transition-colors"
+              className="text-sm text-slate-500 hover:text-emerald-600 transition-colors cursor-pointer"
             >
               Forgot Password?
             </button>
@@ -1109,22 +1276,22 @@ export default function App() {
             </p>
           </div>
         </motion.div>
-      </div>
+      </AuthLayout>
     );
   }
 
   if (view === 'register') {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <AuthLayout showMobileAuth={showMobileAuth} onContinueMobile={() => { setShowMobileAuth(true); localStorage.setItem('dlcf_slideshow_seen', 'true'); }}>
         <Toast />
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-md bg-white rounded-3xl shadow-xl shadow-slate-200/50 p-8 border border-slate-100"
+          className="w-full bg-white/95 backdrop-blur-md rounded-3xl shadow-xl shadow-slate-200/40 p-8 border border-slate-100/50"
         >
           <div className="flex flex-col items-center mb-8">
-            <div className="bg-emerald-600 p-3 rounded-2xl mb-4 shadow-lg shadow-emerald-200">
-              <UserIcon className="w-8 h-8 text-white" />
+            <div className="w-16 h-16 rounded-2xl mb-4 shadow-lg overflow-hidden border-2 border-emerald-500 bg-white flex items-center justify-center">
+              <img src={dlcfLogo} alt="DLCF Logo" className="w-full h-full object-cover" />
             </div>
             <h1 className="text-2xl font-bold text-slate-800">Member Registration</h1>
             <p className="text-slate-500 text-sm text-center">Create your account to join the community</p>
@@ -1173,7 +1340,7 @@ export default function App() {
             </div>
             <button 
               type="submit"
-              className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all active:scale-[0.98]"
+              className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all active:scale-[0.98] cursor-pointer"
             >
               Register Account
             </button>
@@ -1181,27 +1348,27 @@ export default function App() {
           
           <button 
             onClick={() => { setView('login'); setShowPassword(false); }}
-            className="w-full mt-4 text-sm text-slate-500 hover:text-emerald-600 transition-colors"
+            className="w-full mt-4 text-sm text-slate-500 hover:text-emerald-600 transition-colors cursor-pointer"
           >
             Already have an account? Sign In
           </button>
         </motion.div>
-      </div>
+      </AuthLayout>
     );
   }
 
   if (view === 'forgot-password') {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <AuthLayout showMobileAuth={showMobileAuth} onContinueMobile={() => { setShowMobileAuth(true); localStorage.setItem('dlcf_slideshow_seen', 'true'); }}>
         <Toast />
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-md bg-white rounded-3xl shadow-xl shadow-slate-200/50 p-8 border border-slate-100"
+          className="w-full bg-white/95 backdrop-blur-md rounded-3xl shadow-xl shadow-slate-200/40 p-8 border border-slate-100/50"
         >
           <div className="flex flex-col items-center mb-8">
-            <div className="bg-emerald-600 p-3 rounded-2xl mb-4 shadow-lg shadow-emerald-200">
-              <ShieldCheck className="w-8 h-8 text-white" />
+            <div className="w-16 h-16 rounded-2xl mb-4 shadow-lg overflow-hidden border-2 border-emerald-500 bg-white flex items-center justify-center">
+              <img src={dlcfLogo} alt="DLCF Logo" className="w-full h-full object-cover" />
             </div>
             <h1 className="text-2xl font-bold text-slate-800">Recover Password</h1>
             <p className="text-slate-500 text-sm text-center">Enter your email to receive your password</p>
@@ -1221,7 +1388,7 @@ export default function App() {
             <button 
               type="submit"
               disabled={loading}
-              className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all active:scale-[0.98] disabled:opacity-50"
+              className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Send Password'}
             </button>
@@ -1229,12 +1396,12 @@ export default function App() {
           
           <button 
             onClick={() => setView('login')}
-            className="w-full mt-4 text-sm text-slate-500 hover:text-emerald-600 transition-colors"
+            className="w-full mt-4 text-sm text-slate-500 hover:text-emerald-600 transition-colors cursor-pointer"
           >
             Back to Login
           </button>
         </motion.div>
-      </div>
+      </AuthLayout>
     );
   }
 
@@ -1356,8 +1523,8 @@ export default function App() {
                 <Menu className="w-6 h-6" />
               </button>
               <div className="flex items-center gap-2">
-                <div className="bg-emerald-600 p-2 rounded-lg">
-                  <Library className="w-6 h-6 text-white" />
+                <div className="w-10 h-10 rounded-xl overflow-hidden border border-emerald-500/20 bg-white flex items-center justify-center shadow-sm">
+                  <img src={dlcfLogo} alt="DLCF Logo" className="w-full h-full object-cover" />
                 </div>
                 <span className="text-xl font-bold tracking-tight text-emerald-900">DLCF <span className="text-emerald-600">E-Library</span></span>
               </div>
@@ -2248,8 +2415,8 @@ export default function App() {
             >
               <div className="p-6 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="bg-emerald-600 p-2 rounded-lg">
-                    <Library className="w-5 h-5 text-white" />
+                  <div className="w-9 h-9 rounded-lg overflow-hidden border border-emerald-500/20 bg-white flex items-center justify-center shadow-sm">
+                    <img src={dlcfLogo} alt="DLCF Logo" className="w-full h-full object-cover" />
                   </div>
                   <span className="font-bold text-slate-800">DLCF Library</span>
                 </div>
@@ -2653,7 +2820,9 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-2">
-              <Library className="w-5 h-5 text-emerald-600" />
+              <div className="w-8 h-8 rounded-lg overflow-hidden border border-slate-200 bg-white flex items-center justify-center shadow-sm">
+                <img src={dlcfLogo} alt="DLCF Logo" className="w-full h-full object-cover" />
+              </div>
               <span className="font-bold text-slate-800">DLCF E-Library</span>
             </div>
             <p className="text-sm text-slate-400">© {new Date().getFullYear()} Deeper Life Campus Fellowship. All rights reserved.</p>
