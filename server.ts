@@ -174,6 +174,11 @@ app.use((req, res, next) => {
         .single();
       
       if (error || !user) {
+        if (error) {
+          console.error('[Supabase Error in Login]:', error.message || error);
+        } else {
+          console.warn('[Login Failure]: No user found with provided email and password.');
+        }
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       
