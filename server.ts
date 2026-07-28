@@ -141,17 +141,15 @@ function getSupabase() {
   return supabaseClient;
 }
 
-async function startServer() {
-  const app = express();
-  const PORT = parseInt(process.env.PORT || '3000', 10);
+const app = express();
 
-  app.use(express.json());
+app.use(express.json());
 
-  // Logging middleware
-  app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-    next();
-  });
+// Logging middleware
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
 
   // --- API Routes ---
 
@@ -1041,28 +1039,32 @@ async function startServer() {
   // Apply API error handler to all /api routes
   app.use('/api', apiErrorHandler);
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    // Serve static files from dist/client
-    const clientDistPath = path.join(__dirname, 'client');
-    console.log(`[Server] Serving static files from: ${clientDistPath}`);
-    
-    app.use(express.static(clientDistPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(clientDistPath, 'index.html'));
-    });
+  // Vite middleware for development (skip on Vercel serverless)
+  if (!process.env.VERCEL) {
+    (async () => {
+      const PORT = parseInt(process.env.PORT || '3000', 10);
+      if (process.env.NODE_ENV !== 'production') {
+        const vite = await createViteServer({
+          server: { middlewareMode: true },
+          appType: 'spa',
+        });
+        app.use(vite.middlewares);
+      } else {
+        // Serve static files from dist/client
+        const clientDistPath = path.join(__dirname, 'client');
+        console.log(`[Server] Serving static files from: ${clientDistPath}`);
+        
+        app.use(express.static(clientDistPath));
+        app.get('*', (req, res) => {
+          res.sendFile(path.join(clientDistPath, 'index.html'));
+        });
+      }
+
+      app.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+        console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      });
+    })();
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  });
-}
-
-startServer();
+export default app;
