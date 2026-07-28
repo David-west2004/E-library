@@ -348,6 +348,12 @@ export default function App() {
 
   // Restore session from localStorage on mount
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('token')) {
+      // If visiting a registration link, do not restore the existing session to avoid redirecting
+      return;
+    }
+
     const savedUser = localStorage.getItem('dlcf_user');
     if (savedUser) {
       try {
