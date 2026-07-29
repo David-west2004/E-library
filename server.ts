@@ -742,7 +742,7 @@ app.use((req, res, next) => {
     if (error.message?.includes('Could not find') || error.code === '42703') {
       console.warn('[Supabase] Missing columns detected, falling back to description metadata');
       
-      const safeColumns = ['id', 'title', 'author', 'category', 'cover_url', 'download_url', 'description', 'created_at'];
+      const safeColumns = ['id', 'title', 'category', 'cover_url', 'download_url', 'description', 'created_at'];
       const fallbackData: any = {};
       const metadata: any = {};
 
@@ -785,7 +785,7 @@ app.use((req, res, next) => {
     if (error.message?.includes('Could not find') || error.code === '42703') {
       console.warn('[Supabase] Missing columns detected during update, falling back to description metadata');
       
-      const safeColumns = ['id', 'title', 'author', 'category', 'cover_url', 'download_url', 'description', 'created_at'];
+      const safeColumns = ['id', 'title', 'category', 'cover_url', 'download_url', 'description', 'created_at'];
       const fallbackData: any = {};
       const metadata: any = {};
 
@@ -1104,7 +1104,6 @@ app.use((req, res, next) => {
           const bookData = {
             id: uuidv4(),
             title,
-            author: 'DLCF Library',
             category,
             department,
             level,

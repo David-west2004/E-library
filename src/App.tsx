@@ -942,7 +942,6 @@ export default function App() {
 
       const bookData = {
         title,
-        author: 'DLCF Library', // Default author
         category,
         cover_url: coverUrl,
         download_url: docData.url,
@@ -1076,7 +1075,6 @@ export default function App() {
 
     const updates: any = {
       title,
-      author: formData.get('author') || editingBook.author || 'DLCF Library',
       category,
       department: formData.get('department') || '',
       level: formData.get('level') || '',
@@ -1156,7 +1154,6 @@ export default function App() {
     return books.filter((book) => {
       const matchesSearch = 
         book.title.toLowerCase().includes(filters.search.toLowerCase()) ||
-        book.author.toLowerCase().includes(filters.search.toLowerCase()) ||
         book.courseCode?.toLowerCase().includes(filters.search.toLowerCase()) ||
         book.courseTitle?.toLowerCase().includes(filters.search.toLowerCase());
       
@@ -1177,8 +1174,7 @@ export default function App() {
   const groupedAdminBooks = useMemo<{ [key: string]: Book[] }>(() => {
     const filtered = books.filter(b => 
       b.title.toLowerCase().includes(adminBookSearch.toLowerCase()) ||
-      (b.courseCode || '').toLowerCase().includes(adminBookSearch.toLowerCase()) ||
-      (b.author || '').toLowerCase().includes(adminBookSearch.toLowerCase())
+      (b.courseCode || '').toLowerCase().includes(adminBookSearch.toLowerCase())
     );
 
     const groups: { [key: string]: Book[] } = {};
@@ -2028,7 +2024,7 @@ export default function App() {
                           name="pdf_file" 
                           accept=".pdf,.doc,.docx,.ppt,.pptx,.txt" 
                           required 
-                          className="hidden" 
+                          className="sr-only" 
                           id="pdf-upload"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
@@ -2147,7 +2143,7 @@ export default function App() {
                                   </div>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="flex items-center gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                                 <button 
                                   onClick={() => setEditingBook(book)}
                                   className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
@@ -2193,7 +2189,7 @@ export default function App() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input 
                       type="text"
-                      placeholder="Title, author, code..."
+                      placeholder="Title, course code, course title..."
                       className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
                       value={filters.search}
                       onChange={(e) => setFilters({ ...filters, search: e.target.value })}
@@ -2383,7 +2379,6 @@ export default function App() {
                           )}
                         </div>
                         <h3 className="text-sm sm:text-base font-bold text-slate-800 line-clamp-1 group-hover:text-emerald-600 transition-colors">{book.title}</h3>
-                        <p className="text-[10px] sm:text-sm text-slate-500 mb-2 sm:mb-3">{book.author}</p>
                         
                         {book.category === BookCategory.ACADEMIC && (
                           <div className="flex items-center gap-2 text-[9px] sm:text-[11px] text-slate-400 border-t border-slate-100 pt-2 sm:pt-3">
@@ -2565,7 +2560,7 @@ export default function App() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input 
                       type="text"
-                      placeholder="Title, author, code..."
+                      placeholder="Title, course code, course title..."
                       className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                       value={filters.search}
                       onChange={(e) => setFilters({ ...filters, search: e.target.value })}

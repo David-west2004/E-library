@@ -10,3 +10,7 @@ ALTER TABLE books ADD COLUMN IF NOT EXISTS uploader_id UUID;
 UPDATE users 
 SET password = '$2a$10$3eY9nEq.7gC0V48b1D9uFeQ89Tq7bQpM7n5o5e4Y21K0q9tB.8Fqy'
 WHERE email = 'admin@dlcf.org';
+
+-- Remove author column from books table
+ALTER TABLE books DROP COLUMN IF EXISTS author;
+
