@@ -770,6 +770,68 @@ app.use((req, res, next) => {
     return { data: null, error };
   }
 
+  // Helper to update book with fallback for missing columns
+  async function updateBookResilient(supabase: any, id: string, bookData: any) {
+    // Try full update first
+    const { data, error } = await supabase
+      .from('books')
+      .update(bookData)
+      .eq('id', id)
+      .select();
+
+    if (!error) return { data, error: null };
+
+    // If error is about missing columns, try fallback
+    if (error.message?.includes('Could not find') || error.code === '42703') {
+      console.warn('[Supabase] Missing columns detected during update, falling back to description metadata');
+      
+      const safeColumns = ['id', 'title', 'author', 'category', 'cover_url', 'download_url', 'description', 'created_at'];
+      const fallbackData: any = {};
+      const metadata: any = {};
+
+      Object.keys(bookData).forEach(key => {
+        if (safeColumns.includes(key)) {
+          fallbackData[key] = bookData[key];
+        } else {
+          metadata[key] = bookData[key];
+        }
+      });
+
+      // Fetch the existing description first
+      const { data: existingBook } = await supabase
+        .from('books')
+        .select('description')
+        .eq('id', id)
+        .single();
+
+      let existingMetadata: any = {};
+      let cleanDescription = existingBook?.description || '';
+
+      if (cleanDescription.includes('JSON_META:')) {
+        const parts = cleanDescription.split('JSON_META:');
+        cleanDescription = parts[0].trim();
+        try {
+          existingMetadata = JSON.parse(parts[1]);
+        } catch (e) {}
+      }
+
+      // Merge new metadata over existing metadata
+      const mergedMetadata = { ...existingMetadata, ...metadata };
+      const metaString = `JSON_META:${JSON.stringify(mergedMetadata)}`;
+      fallbackData.description = cleanDescription 
+        ? `${cleanDescription}\n\n${metaString}`
+        : metaString;
+
+      return await supabase
+        .from('books')
+        .update(fallbackData)
+        .eq('id', id)
+        .select();
+    }
+
+    return { data: null, error };
+  }
+
   // Books Management
   app.get('/api/books', async (req, res) => {
     try {
@@ -843,10 +905,7 @@ app.use((req, res, next) => {
     const { id } = req.params;
     try {
       const supabase = getSupabase();
-      const { error } = await supabase
-        .from('books')
-        .update(req.body)
-        .eq('id', id);
+      const { error } = await updateBookResilient(supabase, id, req.body);
       
       if (error) throw error;
       res.json({ success: true });

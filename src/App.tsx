@@ -1196,18 +1196,19 @@ export default function App() {
     const groups: Record<string, { code: string, title: string, count: number, department: string, level: string, coverUrl: string }> = {};
     
     filteredBooks.forEach(book => {
-      if (book.category === BookCategory.ACADEMIC && book.courseCode) {
-        if (!groups[book.courseCode]) {
-          groups[book.courseCode] = {
-            code: book.courseCode,
-            title: book.courseTitle || book.title,
+      if (book.category === BookCategory.ACADEMIC) {
+        const code = book.courseCode || 'GENERAL';
+        if (!groups[code]) {
+          groups[code] = {
+            code: code,
+            title: book.courseTitle || (code === 'GENERAL' ? 'General Materials' : book.title),
             count: 0,
             department: book.department || '',
             level: book.level || '',
-            coverUrl: book.coverUrl
+            coverUrl: book.coverUrl || 'https://picsum.photos/seed/book/400/600'
           };
         }
-        groups[book.courseCode].count++;
+        groups[code].count++;
       }
     });
     
@@ -2274,7 +2275,7 @@ export default function App() {
                       filters.category === 'All' ? 'All Resources' : filters.category
                     )}
                     <span className="ml-2 text-sm font-normal text-slate-400">
-                      ({selectedCourse ? filteredBooks.filter(b => b.courseCode === selectedCourse).length : 
+                      ({selectedCourse ? filteredBooks.filter(b => (b.courseCode || 'GENERAL') === selectedCourse).length : 
                         (filters.category === BookCategory.ACADEMIC ? groupedCourses.length : filteredBooks.length)} 
                       {filters.category !== BookCategory.ACADEMIC ? ' items' : (selectedCourse ? ' items' : ' courses')})
                     </span>
@@ -2332,7 +2333,7 @@ export default function App() {
                     filteredBooks
                       .filter(b => {
                         if (filters.category === BookCategory.CHRISTIAN_NOVEL) return true;
-                        return b.courseCode === selectedCourse;
+                        return (b.courseCode || 'GENERAL') === selectedCourse;
                       })
                       .map((book) => (
                     <motion.a
@@ -2403,7 +2404,7 @@ export default function App() {
               </div>
 
               {((filters.category === BookCategory.ACADEMIC && !selectedCourse && groupedCourses.length === 0) || 
-                (selectedCourse && filteredBooks.filter(b => b.courseCode === selectedCourse).length === 0) ||
+                (selectedCourse && filteredBooks.filter(b => (b.courseCode || 'GENERAL') === selectedCourse).length === 0) ||
                 (filters.category === BookCategory.CHRISTIAN_NOVEL && filteredBooks.length === 0)) && (
                 <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-dashed border-slate-200">
                   <div className="bg-slate-50 p-4 rounded-full mb-4">
