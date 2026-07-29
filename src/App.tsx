@@ -845,70 +845,81 @@ export default function App() {
     const file = formData.get('pdf_file') as File;
     
     if (!file) {
-      showToast('Please select a PDF file', 'error');
+      showToast('Please select a file', 'error');
       return;
     }
 
     setLoading(true);
-    setUploadProgress('Generating thumbnail...');
+    setUploadProgress('Uploading document...');
 
     try {
-      // 1. Generate Thumbnail from PDF
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      const page = await pdf.getPage(1);
-      const viewport = page.getViewport({ scale: 0.5 });
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-      
-      if (context) {
-        await page.render({ canvasContext: context, viewport } as any).promise;
-      }
-      
-      const thumbnailBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
-      if (!thumbnailBlob) throw new Error('Failed to generate thumbnail');
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      let coverUrl = 'https://picsum.photos/seed/book/400/600'; // Default cover
 
-      // 2. Upload PDF
-      setUploadProgress('Uploading PDF...');
-      const pdfUploadFormData = new FormData();
-      pdfUploadFormData.append('file', file);
-      const pdfRes = await fetch('/api/admin/upload', {
+      // 1. Upload Document First
+      setUploadProgress('Uploading file to cloud storage...');
+      const docUploadFormData = new FormData();
+      docUploadFormData.append('file', file);
+      const docRes = await fetch('/api/admin/upload', {
         method: 'POST',
-        body: pdfUploadFormData
+        body: docUploadFormData
       });
       
-      let pdfData;
-      const pdfText = await pdfRes.text();
+      let docData;
+      const docText = await docRes.text();
       try {
-        pdfData = JSON.parse(pdfText);
+        docData = JSON.parse(docText);
       } catch (e) {
-        throw new Error(`Server returned non-JSON response during PDF upload (${pdfRes.status})`);
+        throw new Error(`Server returned non-JSON response during file upload (${docRes.status})`);
       }
       
-      if (!pdfRes.ok) throw new Error(pdfData.error || 'PDF upload failed');
+      if (!docRes.ok) throw new Error(docData.error || 'File upload failed');
 
-      // 3. Upload Thumbnail
-      setUploadProgress('Uploading thumbnail...');
-      const thumbUploadFormData = new FormData();
-      thumbUploadFormData.append('file', new File([thumbnailBlob], 'thumbnail.jpg', { type: 'image/jpeg' }));
-      const thumbRes = await fetch('/api/admin/upload', {
-        method: 'POST',
-        body: thumbUploadFormData
-      });
-      
-      let thumbData;
-      const thumbText = await thumbRes.text();
-      try {
-        thumbData = JSON.parse(thumbText);
-      } catch (e) {
-        throw new Error(`Server returned non-JSON response during thumbnail upload (${thumbRes.status})`);
+      // 2. Generate Thumbnail from PDF (only if it is a PDF)
+      if (isPdf) {
+        setUploadProgress('Generating PDF thumbnail...');
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          const page = await pdf.getPage(1);
+          const viewport = page.getViewport({ scale: 0.5 });
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+          
+          if (context) {
+            await page.render({ canvasContext: context, viewport } as any).promise;
+          }
+          
+          const thumbnailBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+          if (thumbnailBlob) {
+            setUploadProgress('Uploading thumbnail...');
+            const thumbUploadFormData = new FormData();
+            thumbUploadFormData.append('file', new File([thumbnailBlob], 'thumbnail.jpg', { type: 'image/jpeg' }));
+            const thumbRes = await fetch('/api/admin/upload', {
+              method: 'POST',
+              body: thumbUploadFormData
+            });
+            const thumbData = await thumbRes.json();
+            if (thumbRes.ok && thumbData.url) {
+              coverUrl = thumbData.url;
+            }
+          }
+        } catch (e) {
+          console.warn('Could not generate PDF thumbnail, using default cover:', e);
+        }
+      } else {
+        // Use generic placeholders based on extension
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        if (ext === 'doc' || ext === 'docx') {
+          coverUrl = 'https://images.unsplash.com/photo-1586075010923-2dd4570fb338?w=400&q=80'; // Word document look
+        } else if (ext === 'ppt' || ext === 'pptx') {
+          coverUrl = 'https://images.unsplash.com/photo-1596495578065-6e0763fa1141?w=400&q=80'; // Presentation look
+        }
       }
-      
-      if (!thumbRes.ok) throw new Error(thumbData.error || 'Thumbnail upload failed');
 
-      // 4. Save Book Record
+      // 3. Save Book Record
       setUploadProgress('Saving record...');
       const category = formData.get('category') as BookCategory;
       const title = category === BookCategory.ACADEMIC 
@@ -933,13 +944,19 @@ export default function App() {
         title,
         author: 'DLCF Library', // Default author
         category,
-        cover_url: thumbData.url,
-        download_url: pdfData.url,
+        cover_url: coverUrl,
+        download_url: docData.url,
         department: formData.get('department'),
         level: formData.get('level'),
         course_code: formData.get('course_code'),
         course_title: formData.get('course_title'),
-        material_type: detectedMaterialType
+        material_type: detectedMaterialType,
+        // Added metadata fields:
+        file_key: docData.file_key,
+        file_name: docData.file_name,
+        mime_type: docData.mime_type,
+        file_size: docData.file_size,
+        uploader_id: user?.id
       };
 
       const res = await fetch('/api/admin/books', {
@@ -1109,7 +1126,16 @@ export default function App() {
       const res = await fetch('/api/admin/mass-upload-gdrive', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folderId, department, level, category, courseCode, courseTitle, materialType }),
+        body: JSON.stringify({ 
+          folderId, 
+          department, 
+          level, 
+          category, 
+          courseCode, 
+          courseTitle, 
+          materialType,
+          uploaderId: user?.id
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -1994,12 +2020,12 @@ export default function App() {
                     )}
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">PDF File</label>
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Document File</label>
                       <div className="relative">
                         <input 
                           type="file" 
                           name="pdf_file" 
-                          accept=".pdf" 
+                          accept=".pdf,.doc,.docx,.ppt,.pptx,.txt" 
                           required 
                           className="hidden" 
                           id="pdf-upload"
@@ -2016,7 +2042,7 @@ export default function App() {
                           className="flex items-center gap-3 w-full px-4 py-3 bg-slate-50 border border-dashed border-slate-300 rounded-xl text-sm cursor-pointer hover:bg-slate-100 transition-colors"
                         >
                           <FileUp className="w-5 h-5 text-slate-400" />
-                          <span id="pdf-label" className="text-slate-500 truncate">Select PDF from local storage</span>
+                          <span id="pdf-label" className="text-slate-500 truncate">Select document from local storage (.pdf, .docx, .pptx, etc.)</span>
                         </label>
                       </div>
                     </div>

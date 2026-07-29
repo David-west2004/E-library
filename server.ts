@@ -1,5 +1,6 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
+import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -161,26 +162,31 @@ app.use((req, res, next) => {
     });
   };
 
-  // Auth - Login
-  app.post('/api/auth/login', async (req, res) => {
-    const { email, password } = req.body;
-    try {
-      const supabase = getSupabase();
-      const { data: user, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email)
-        .eq('password', password)
-        .single();
-      
-      if (error || !user) {
-        if (error) {
-          console.error('[Supabase Error in Login]:', error.message || error);
-        } else {
-          console.warn('[Login Failure]: No user found with provided email and password.');
-        }
-        return res.status(401).json({ error: 'Invalid credentials' });
-      }
+     // Auth - Login
+     app.post('/api/auth/login', async (req, res) => {
+       const { email, password } = req.body;
+       try {
+         const supabase = getSupabase();
+         const { data: user, error } = await supabase
+           .from('users')
+           .select('*')
+           .eq('email', email)
+           .single();
+         
+         if (error || !user) {
+           if (error) {
+             console.error('[Supabase Error in Login]:', error.message || error);
+           } else {
+             console.warn('[Login Failure]: No user found with provided email.');
+           }
+           return res.status(401).json({ error: 'Invalid credentials' });
+         }
+         
+         const passwordMatch = await bcrypt.compare(password, user.password);
+         if (!passwordMatch) {
+           console.warn('[Login Failure]: Password mismatch for email:', email);
+           return res.status(401).json({ error: 'Invalid credentials' });
+         }
       
       if (!user.is_approved && !user.is_admin) {
         return res.status(403).json({ 
@@ -244,10 +250,13 @@ app.use((req, res, next) => {
         return res.status(400).json({ error: 'Invalid registration link' });
       }
 
+      // Hash the password securely with bcryptjs (10 salt rounds)
+      const hashedPassword = await bcrypt.hash(password, 10);
+
       // Create user (Automatically approved)
       const { error: regError } = await supabase
         .from('users')
-        .insert([{ id: uuidv4(), email, password, name, is_approved: true, is_admin: false }]);
+        .insert([{ id: uuidv4(), email, password: hashedPassword, name, is_approved: true, is_admin: false }]);
       
       if (regError) throw regError;
 
@@ -878,7 +887,13 @@ app.use((req, res, next) => {
         .from(bucketName)
         .getPublicUrl(fileName);
 
-      res.json({ url: publicUrl });
+      res.json({ 
+        url: publicUrl,
+        file_key: fileName,
+        file_name: req.file.originalname,
+        mime_type: req.file.mimetype,
+        file_size: req.file.size
+      });
     } catch (err: any) {
       console.error('Upload error:', err);
       res.status(500).json({ error: err.message });
@@ -886,58 +901,79 @@ app.use((req, res, next) => {
   });
 
   app.post('/api/admin/mass-upload-gdrive', async (req, res) => {
-    let { folderId, department, level, category, courseCode: manualCourseCode, courseTitle: manualCourseTitle, materialType } = req.body;
+    let { folderId, department, level, category, courseCode: manualCourseCode, courseTitle: manualCourseTitle, materialType, uploaderId } = req.body;
     const apiKey = process.env.GOOGLE_DRIVE_API_KEY;
 
-    console.log(`[Mass Upload] Starting request for folder: ${folderId}, Course: ${manualCourseCode}, Type: ${materialType}`);
+    console.log(`[Mass Upload] Starting request for resource: ${folderId}, Course: ${manualCourseCode}, Type: ${materialType}`);
 
     if (!apiKey) {
       console.error('[Mass Upload] CRITICAL: GOOGLE_DRIVE_API_KEY is missing from environment variables.');
       return res.status(400).json({ error: 'GOOGLE_DRIVE_API_KEY is not configured in the environment. Please check your project secrets.' });
     }
 
-    console.log(`[Mass Upload] API Key present (length: ${apiKey.length}). Attempting to list files...`);
-
     if (!folderId) {
-      return res.status(400).json({ error: 'Folder ID is required.' });
+      return res.status(400).json({ error: 'Folder ID or File ID is required.' });
     }
 
+    let isFolder = true;
     // Extract ID from URL if user pasted a full link
     if (folderId.includes('drive.google.com')) {
-      const match = folderId.match(/\/folders\/([a-zA-Z0-9_-]+)/);
-      if (match) {
-        folderId = match[1];
+      const folderMatch = folderId.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+      const fileMatch = folderId.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+      if (folderMatch) {
+        folderId = folderMatch[1];
+        isFolder = true;
         console.log(`[Mass Upload] Extracted folder ID from URL: ${folderId}`);
+      } else if (fileMatch) {
+        folderId = fileMatch[1];
+        isFolder = false;
+        console.log(`[Mass Upload] Extracted file ID from URL: ${folderId}`);
       }
     }
 
     try {
       const drive = google.drive({ version: 'v3', auth: apiKey });
-      
-      console.log('[Mass Upload] Fetching file list from GDrive...');
-      // List files in the folder
-      const response = await drive.files.list({
-        q: `'${folderId}' in parents and mimeType = 'application/pdf' and trashed = false`,
-        fields: 'files(id, name, size, mimeType)',
-      }).catch(err => {
-        console.error('[Mass Upload] GDrive API List Error:', err.message);
-        if (err.message.includes('File not found')) {
-          throw new Error('Google Drive Folder not found. Please check the ID and ensure the folder is shared as "Public".');
-        }
-        throw err;
-      });
-
-      const files = response.data.files || [];
-      console.log(`[Mass Upload] Found ${files.length} PDF files`);
-
-      if (files.length === 0) {
-        return res.json({ success: true, message: 'No PDF files found in the specified folder.', count: 0 });
-      }
-
       const supabase = getSupabase();
       await ensureBucket(supabase);
       const bucketName = 'materials';
       const results = [];
+      let files = [];
+
+      if (isFolder) {
+        console.log('[Mass Upload] Fetching file list from GDrive folder...');
+        // List all files (excluding folders) in the folder
+        const response = await drive.files.list({
+          q: `'${folderId}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'`,
+          fields: 'files(id, name, size, mimeType)',
+        }).catch(err => {
+          console.error('[Mass Upload] GDrive API List Error:', err.message);
+          if (err.message.includes('File not found')) {
+            throw new Error('Google Drive Folder not found. Please check the ID and ensure the folder is shared as "Public".');
+          }
+          throw err;
+        });
+        files = response.data.files || [];
+        console.log(`[Mass Upload] Found ${files.length} files in folder`);
+      } else {
+        console.log('[Mass Upload] Fetching file metadata from GDrive for single file...');
+        // Get single file metadata
+        const response = await drive.files.get({
+          fileId: folderId,
+          fields: 'id, name, size, mimeType'
+        }).catch(err => {
+          console.error('[Mass Upload] GDrive API Get Error:', err.message);
+          if (err.message.includes('File not found')) {
+            throw new Error('Google Drive File not found. Please check the ID and ensure the file is shared as "Public".');
+          }
+          throw err;
+        });
+        files = [response.data];
+        console.log(`[Mass Upload] Target file: ${files[0].name}`);
+      }
+
+      if (files.length === 0) {
+        return res.json({ success: true, message: 'No valid files found.', count: 0 });
+      }
 
       for (const file of files) {
         try {
@@ -955,7 +991,7 @@ app.use((req, res, next) => {
           const { error: uploadError } = await supabase.storage
             .from(bucketName)
             .upload(fileName, buffer, {
-              contentType: 'application/pdf',
+              contentType: file.mimeType || 'application/octet-stream',
               upsert: true
             });
 
@@ -966,12 +1002,11 @@ app.use((req, res, next) => {
             .getPublicUrl(fileName);
 
           // Create book record
-          // Use manual course code and title from form for the directory grouping
           const courseCode = manualCourseCode || 'GENERAL';
           // If it's a Christian Novel, use filename as title and clear courseCode
-          let title = file.name?.replace('.pdf', '').trim() || 'Untitled Material';
+          let title = file.name ? file.name.replace(/\.[^/.]+$/, '').trim() : 'Untitled Material';
           let finalCourseCode = courseCode;
-          let finalCourseTitle = manualCourseTitle || courseCode; // Use manual title if provided, else fallback to code
+          let finalCourseTitle = manualCourseTitle || courseCode;
 
           if (category === 'Christian Novel') {
             finalCourseCode = ''; 
@@ -1018,8 +1053,14 @@ app.use((req, res, next) => {
             course_title: finalCourseTitle,
             material_type: detectedMaterialType,
             download_url: publicUrl,
-            cover_url: 'https://picsum.photos/seed/book/400/600', // Default cover for mass upload
-            description: `Mass uploaded from Google Drive: ${file.name}`
+            cover_url: 'https://picsum.photos/seed/book/400/600', // Default cover
+            description: `Mass uploaded from Google Drive: ${file.name}`,
+            // Store file metadata
+            file_key: fileName,
+            file_name: file.name,
+            mime_type: file.mimeType || 'application/octet-stream',
+            file_size: file.size ? parseInt(file.size, 10) : null,
+            uploader_id: uploaderId || null
           };
 
           const { data: dbData, error: dbError } = await insertBookResilient(supabase, bookData);
