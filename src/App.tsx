@@ -1076,14 +1076,14 @@ export default function App() {
 
     const updates: any = {
       title,
-      author: formData.get('author'),
+      author: formData.get('author') || editingBook.author || 'DLCF Library',
       category,
-      department: formData.get('department'),
-      level: formData.get('level'),
+      department: formData.get('department') || '',
+      level: formData.get('level') || '',
       course_code: courseCode,
-      course_title: formData.get('course_title'),
+      course_title: formData.get('course_title') || '',
       material_type: detectedMaterialType,
-      description: formData.get('description'),
+      description: formData.get('description') || editingBook.description || '',
     };
 
     setLoading(true);
