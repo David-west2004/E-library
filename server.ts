@@ -125,7 +125,7 @@ const sendWelcomeEmail = async (email: string, name: string) => {
   }
 };
 
-// Lazy Supabase Client Initialization
+// Lazy Supabase Client Initialization (Requires Vercel redeployment after adding SUPABASE_SERVICE_ROLE_KEY)
 let supabaseClient: any = null;
 
 function getSupabase() {
