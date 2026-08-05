@@ -131,10 +131,10 @@ let supabaseClient: any = null;
 function getSupabase() {
   if (!supabaseClient) {
     const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_ANON_KEY;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
     if (!url || !key) {
-      console.error('[Supabase] CRITICAL: SUPABASE_URL or SUPABASE_ANON_KEY is missing.');
-      throw new Error('SUPABASE_URL and SUPABASE_ANON_KEY are required. Please configure them in your environment variables.');
+      console.error('[Supabase] CRITICAL: SUPABASE_URL or SUPABASE_ANON_KEY/SUPABASE_SERVICE_ROLE_KEY is missing.');
+      throw new Error('SUPABASE_URL and either SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY are required.');
     }
     supabaseClient = createClient(url, key);
   }

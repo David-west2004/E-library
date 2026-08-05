@@ -35,8 +35,14 @@ import {
   Trash2
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
+import { createClient } from '@supabase/supabase-js';
 import { Book, BookCategory, FilterState, User, RegistrationLink } from './types';
 import { INITIAL_BOOKS, DEPARTMENTS, LEVELS } from './constants';
+
+// Initialize Supabase Client
+const supabaseUrl = process.env.SUPABASE_URL || '';
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Set worker source for pdfjs
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
@@ -209,6 +215,8 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [view, setView] = useState<'login' | 'register' | 'library' | 'admin' | 'forgot-password' | 'profile'>('login');
   const [regToken, setRegToken] = useState<string | null>(null);
+  const [tokenVerifying, setTokenVerifying] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
   const [showMobileAuth, setShowMobileAuth] = useState(() => {
     return localStorage.getItem('dlcf_slideshow_seen') === 'true';
   });
@@ -338,12 +346,37 @@ export default function App() {
 
   // Check for registration token in URL
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    if (token) {
-      setRegToken(token);
-      setView('register');
-    }
+    const checkToken = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      if (token) {
+        setTokenVerifying(true);
+        setTokenError(null);
+        try {
+          const { data: isValid, error } = await supabase.rpc('verify_registration_token', { lookup_token: token });
+          if (error || !isValid) {
+            console.error('Token verification error:', error);
+            const errMsg = 'Invalid or expired registration link. Please contact your DLCF admin.';
+            setTokenError(errMsg);
+            showToast(errMsg, 'error');
+            setView('login');
+            // Clean up url query param so user doesn't get stuck
+            window.history.replaceState({}, '', window.location.pathname);
+          } else {
+            setRegToken(token);
+            setView('register');
+          }
+        } catch (err) {
+          console.error('Error verifying token:', err);
+          setTokenError('Failed to verify registration link.');
+          setView('login');
+          window.history.replaceState({}, '', window.location.pathname);
+        } finally {
+          setTokenVerifying(false);
+        }
+      }
+    };
+    checkToken();
   }, []);
 
   // Restore session from localStorage on mount
@@ -371,65 +404,122 @@ export default function App() {
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const email = formData.get('email');
-    const password = formData.get('password');
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
 
+    setLoading(true);
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+      // 1. Log in via standard Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
-      
-      if (res.status === 404) {
-        showToast('Login API not found. Please ensure the server is running correctly.', 'error');
+
+      if (authError) {
+        showToast(authError.message, 'error');
         return;
       }
 
-      const data = await res.json();
-      if (res.ok) {
-        setUser(data.user);
-        localStorage.setItem('dlcf_user', JSON.stringify(data.user));
-        setView(data.user.isAdmin ? 'admin' : 'library');
-        showToast(`Welcome back, ${data.user.name}!`);
-      } else {
-        if (res.status === 403 && data.error === 'Access Revoked') {
-          setRevokedModal({ message: data.message });
-        } else {
-          showToast(data.error || 'Login failed', 'error');
-        }
+      if (!authData.user) {
+        showToast('Login failed - no session returned', 'error');
+        return;
       }
-    } catch (err) {
+
+      // 2. Fetch user profile details from public.users table (allowed via RLS select policy auth.uid() = id)
+      const { data: userProfile, error: profileError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (profileError || !userProfile) {
+        console.error('Failed to retrieve user profile:', profileError);
+        showToast('Could not retrieve user profile.', 'error');
+        await supabase.auth.signOut();
+        return;
+      }
+
+      // 3. Verify approval status
+      if (!userProfile.is_approved && !userProfile.is_admin) {
+        await supabase.auth.signOut();
+        setRevokedModal({ 
+          message: 'Your access to the DLCF E-Library has been revoked by the administrator. Please contact the admin team if you believe this is an error.' 
+        });
+        return;
+      }
+
+      const loggedUser = {
+        id: userProfile.id,
+        email: userProfile.email,
+        name: userProfile.name,
+        isAdmin: !!userProfile.is_admin,
+        isSuperAdmin: !!userProfile.is_super_admin
+      };
+
+      setUser(loggedUser);
+      localStorage.setItem('dlcf_user', JSON.stringify(loggedUser));
+      setView(loggedUser.isAdmin ? 'admin' : 'library');
+      showToast(`Welcome back, ${loggedUser.name}!`);
+    } catch (err: any) {
       console.error('Login error:', err);
-      showToast('Could not connect to the server. Please wait a moment and try again.', 'error');
+      showToast(err.message || 'Login failed', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const email = formData.get('email');
-    const password = formData.get('password');
-    const name = formData.get('name');
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
+    const name = formData.get('name') as string;
 
+    setLoading(true);
     try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name, token: regToken }),
+      // 1. Sign up user via standard Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
       });
-      const data = await res.json();
-      if (res.ok) {
-        showToast('Registration successful! Please wait for admin approval.');
-        setView('login');
-        setShowPassword(false);
-        setRegToken(null);
-        window.history.replaceState({}, '', window.location.pathname);
-      } else {
-        showToast(data.error, 'error');
+
+      if (authError) {
+        showToast(authError.message, 'error');
+        return;
       }
-    } catch (err) {
-      showToast('Registration failed', 'error');
+
+      if (!authData.user) {
+        showToast('Registration failed - no user returned', 'error');
+        return;
+      }
+
+      // 2. Insert profile record into public.users table (allowed via RLS insert policy)
+      const { error: insertError } = await supabase
+        .from('users')
+        .insert([{
+          id: authData.user.id,
+          email,
+          name,
+          is_approved: true, // Keep original auto-approved behavior
+          is_admin: false
+        }]);
+
+      if (insertError) {
+        console.error('Failed to create user profile in DB:', insertError.message);
+        showToast('Profile creation failed: ' + insertError.message, 'error');
+        return;
+      }
+
+      showToast('Registration successful! Please sign in.');
+      setView('login');
+      setShowPassword(false);
+      setRegToken(null);
+      window.history.replaceState({}, '', window.location.pathname);
+    } catch (err: any) {
+      console.error('Registration error:', err);
+      showToast(err.message || 'Registration failed', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -438,6 +528,9 @@ export default function App() {
     setLoading(true);
     
     try {
+      // Sign out from Supabase Auth
+      await supabase.auth.signOut();
+
       // Call server to invalidate session
       if (user) {
         const response = await fetch('/api/auth/logout', {
@@ -1231,6 +1324,21 @@ export default function App() {
 
   // --- Views ---
 
+  if (tokenVerifying) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center max-w-sm text-center">
+          <div className="w-16 h-16 rounded-2xl mb-6 shadow-lg overflow-hidden border-2 border-emerald-500 bg-white flex items-center justify-center animate-pulse">
+            <img src={dlcfLogo} alt="DLCF Logo" className="w-full h-full object-cover" />
+          </div>
+          <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mb-4" />
+          <h2 className="text-xl font-bold text-white mb-2">Verifying Registration Link</h2>
+          <p className="text-slate-400 text-sm">Please wait while we check your access link...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (view === 'login') {
     return (
       <AuthLayout showMobileAuth={showMobileAuth} onContinueMobile={() => { setShowMobileAuth(true); localStorage.setItem('dlcf_slideshow_seen', 'true'); }}>
@@ -1247,6 +1355,16 @@ export default function App() {
             <h1 className="text-2xl font-bold text-slate-800">Welcome Back</h1>
             <p className="text-slate-500 text-sm">Sign in to access the DLCF E-Library</p>
           </div>
+
+          {tokenError && (
+            <div className="mb-6 p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-start gap-3 text-rose-800 text-sm animate-bounce">
+              <ShieldAlert className="w-5 h-5 text-rose-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Invalid Access Link</p>
+                <p className="text-rose-600/90 text-xs mt-0.5">{tokenError}</p>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
@@ -1293,7 +1411,7 @@ export default function App() {
           <div className="mt-4 text-center">
             <button 
               onClick={() => setView('forgot-password')}
-              className="text-sm text-slate-500 hover:text-emerald-600 transition-colors cursor-pointer"
+              className="text-sm text-emerald-600 hover:text-emerald-700 hover:underline font-semibold transition-all cursor-pointer"
             >
               Forgot Password?
             </button>
@@ -1377,7 +1495,7 @@ export default function App() {
           
           <button 
             onClick={() => { setView('login'); setShowPassword(false); }}
-            className="w-full mt-4 text-sm text-slate-500 hover:text-emerald-600 transition-colors cursor-pointer"
+            className="w-full mt-4 text-sm text-emerald-600 hover:text-emerald-700 hover:underline font-semibold transition-all cursor-pointer"
           >
             Already have an account? Sign In
           </button>
@@ -1425,7 +1543,7 @@ export default function App() {
           
           <button 
             onClick={() => setView('login')}
-            className="w-full mt-4 text-sm text-slate-500 hover:text-emerald-600 transition-colors cursor-pointer"
+            className="w-full mt-4 text-sm text-emerald-600 hover:text-emerald-700 hover:underline font-semibold transition-all cursor-pointer"
           >
             Back to Login
           </button>
