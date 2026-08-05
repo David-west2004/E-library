@@ -37,6 +37,7 @@ import {
 import * as pdfjsLib from 'pdfjs-dist';
 import { createClient } from '@supabase/supabase-js';
 import bcrypt from 'bcryptjs';
+import { v4 as uuidv4 } from 'uuid';
 import { Book, BookCategory, FilterState, User, RegistrationLink } from './types';
 import { INITIAL_BOOKS, DEPARTMENTS, LEVELS } from './constants';
 
@@ -686,23 +687,19 @@ export default function App() {
       message: 'Are you sure you want to revoke your own administrative rights? You will become a standard user and lose access to this dashboard.',
       action: async () => {
         try {
-          const res = await fetch('/api/admin/demote-self', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: user?.id }),
-          });
-          if (res.ok) {
-            const updatedUser = { ...user!, isAdmin: false, isSuperAdmin: false };
-            setUser(updatedUser);
-            localStorage.setItem('dlcf_user', JSON.stringify(updatedUser));
-            showToast('Admin rights revoked successfully');
-            setView('library');
-          } else {
-            const data = await res.json();
-            showToast(data.error || 'Failed to revoke admin rights', 'error');
-          }
-        } catch (err) {
-          showToast('Connection error', 'error');
+          const { error } = await supabase
+            .from('users')
+            .update({ is_admin: false, is_super_admin: false })
+            .eq('id', user?.id);
+          if (error) throw error;
+
+          const updatedUser = { ...user!, isAdmin: false, isSuperAdmin: false };
+          setUser(updatedUser);
+          localStorage.setItem('dlcf_user', JSON.stringify(updatedUser));
+          showToast('Admin rights revoked successfully');
+          setView('library');
+        } catch (err: any) {
+          showToast(err.message || 'Failed to revoke admin rights', 'error');
         } finally {
           setConfirmModal(null);
         }
@@ -718,20 +715,16 @@ export default function App() {
       message: `Are you sure you want to promote ${userName} to an Administrator? They will have full access to manage the library.`,
       action: async () => {
         try {
-          const res = await fetch('/api/admin/promote-user', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId }),
-          });
-          if (res.ok) {
-            showToast(`${userName} has been promoted to Admin`);
-            fetchAdminData();
-          } else {
-            const data = await res.json();
-            showToast(data.error || 'Failed to promote user', 'error');
-          }
-        } catch (err) {
-          showToast('Connection error', 'error');
+          const { error } = await supabase
+            .from('users')
+            .update({ is_admin: true, is_approved: true })
+            .eq('id', userId);
+          if (error) throw error;
+
+          showToast(`${userName} has been promoted to Admin`);
+          fetchAdminData();
+        } catch (err: any) {
+          showToast(err.message || 'Failed to promote user', 'error');
         } finally {
           setConfirmModal(null);
         }
@@ -747,20 +740,16 @@ export default function App() {
       message: `Are you sure you want to revoke administrative rights from ${userName}? Only Superadmins can perform this action.`,
       action: async () => {
         try {
-          const res = await fetch('/api/admin/demote-admin', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, requesterId: user?.id }),
-          });
-          if (res.ok) {
-            showToast(`${userName} is no longer an Admin`);
-            fetchAdminData();
-          } else {
-            const data = await res.json();
-            showToast(data.error || 'Failed to demote admin', 'error');
-          }
-        } catch (err) {
-          showToast('Connection error', 'error');
+          const { error } = await supabase
+            .from('users')
+            .update({ is_admin: false, is_super_admin: false })
+            .eq('id', userId);
+          if (error) throw error;
+
+          showToast(`${userName} is no longer an Admin`);
+          fetchAdminData();
+        } catch (err: any) {
+          showToast(err.message || 'Failed to demote admin', 'error');
         } finally {
           setConfirmModal(null);
         }
@@ -776,20 +765,16 @@ export default function App() {
       message: `Are you sure you want to promote ${userName} to a Super Administrator? They will have the highest level of control, including the ability to manage other administrators.`,
       action: async () => {
         try {
-          const res = await fetch('/api/admin/promote-superadmin', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, requesterId: user?.id }),
-          });
-          if (res.ok) {
-            showToast(`${userName} has been promoted to Super Admin`);
-            fetchAdminData();
-          } else {
-            const data = await res.json();
-            showToast(data.error || 'Failed to promote to Super Admin', 'error');
-          }
-        } catch (err) {
-          showToast('Connection error', 'error');
+          const { error } = await supabase
+            .from('users')
+            .update({ is_super_admin: true, is_admin: true, is_approved: true })
+            .eq('id', userId);
+          if (error) throw error;
+
+          showToast(`${userName} has been promoted to Super Admin`);
+          fetchAdminData();
+        } catch (err: any) {
+          showToast(err.message || 'Failed to promote to Super Admin', 'error');
         } finally {
           setConfirmModal(null);
         }
@@ -802,25 +787,37 @@ export default function App() {
     
     // Refresh user session to pick up superadmin status changes
     try {
-      const meRes = await fetch(`/api/auth/me?userId=${user.id}`);
-      if (meRes.ok) {
-        const meData = await meRes.json();
-        setUser(meData.user);
-        localStorage.setItem('dlcf_user', JSON.stringify(meData.user));
+      const { data: dbUser, error: dbErr } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+        
+      if (!dbErr && dbUser) {
+        const updatedUser = {
+          id: dbUser.id,
+          email: dbUser.email,
+          name: dbUser.name,
+          isAdmin: !!dbUser.is_admin,
+          isSuperAdmin: !!dbUser.is_super_admin
+        };
+        setUser(updatedUser);
+        localStorage.setItem('dlcf_user', JSON.stringify(updatedUser));
       }
     } catch (err) {
       console.error('Failed to refresh session:', err);
     }
 
     try {
-      const [usersRes, linksRes, booksRes] = await Promise.all([
-        fetch('/api/admin/users'),
-        fetch('/api/admin/links'),
+      // Fetch users and links directly from Supabase, books via public Express API
+      const [usersResult, linksResult, booksRes] = await Promise.all([
+        supabase.from('users').select('*').order('created_at', { ascending: false }),
+        supabase.from('registration_links').select('*').order('created_at', { ascending: false }),
         fetch('/api/books')
       ]);
 
-      if (usersRes.ok) setAllUsers(await usersRes.json());
-      if (linksRes.ok) setAdminLinks(await linksRes.json());
+      if (!usersResult.error && usersResult.data) setAllUsers(usersResult.data);
+      if (!linksResult.error && linksResult.data) setAdminLinks(linksResult.data);
       
       if (booksRes.ok) {
         const booksData = await booksRes.json();
@@ -845,16 +842,20 @@ export default function App() {
 
   const generateLink = async () => {
     try {
-      const res = await fetch('/api/admin/generate-link', { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to generate link');
-      const data = await res.json();
+      const token = uuidv4();
+      const expiresAt = new Date();
+      expiresAt.setFullYear(expiresAt.getFullYear() + 100);
       
-      // Optimistic update (though we need the token from server)
-      // We just fetch again to be safe but we could also add it manually if we had the full object
+      const { error } = await supabase
+        .from('registration_links')
+        .insert([{ id: uuidv4(), token, expires_at: expiresAt.toISOString() }]);
+        
+      if (error) throw error;
+      
       fetchAdminData();
       showToast('Registration link generated successfully');
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to generate link', 'error');
     }
   };
 
@@ -886,16 +887,16 @@ export default function App() {
     setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, is_approved: newStatus } : u));
     
     try {
-      const res = await fetch('/api/admin/toggle-user-access', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, isApproved: newStatus }),
-      });
-      if (!res.ok) throw new Error('Failed to update user access');
+      const { error } = await supabase
+        .from('users')
+        .update({ is_approved: newStatus })
+        .eq('id', userId);
+        
+      if (error) throw error;
       showToast(`User access ${newStatus ? 'restored' : 'revoked'} successfully`);
     } catch (err: any) {
       setAllUsers(previousUsers); // Rollback
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to update user access', 'error');
     } finally {
       setConfirmModal(null);
     }
@@ -924,21 +925,12 @@ export default function App() {
     setAdminLinks(prev => prev.filter(l => l.id !== id));
 
     try {
-      const res = await fetch(`/api/admin/links/${id}`, { 
-        method: 'DELETE',
-        headers: { 'Accept': 'application/json' }
-      });
-      
-      let data;
-      const text = await res.text();
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
-        console.error('[Frontend] Failed to parse delete link response:', text);
-        throw new Error('Server returned an invalid response');
-      }
-
-      if (!res.ok) throw new Error(data.error || 'Failed to delete link');
+      const { error } = await supabase
+        .from('registration_links')
+        .delete()
+        .eq('id', id);
+        
+      if (error) throw error;
       
       console.log('[Frontend] Link revoked successfully');
       showToast('Link revoked successfully');
