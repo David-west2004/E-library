@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { createClient } from '@supabase/supabase-js';
+import bcrypt from 'bcryptjs';
 import { Book, BookCategory, FilterState, User, RegistrationLink } from './types';
 import { INITIAL_BOOKS, DEPARTMENTS, LEVELS } from './constants';
 
@@ -409,57 +410,72 @@ export default function App() {
 
     setLoading(true);
     try {
-      // 1. Log in via standard Supabase Auth
+      // 1. Try logging in via standard Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (authError) {
-        showToast(authError.message, 'error');
+      if (!authError && authData.user) {
+        // Fetch user profile details from public.users table (allowed via RLS select policy auth.uid() = id)
+        const { data: userProfile, error: profileError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', authData.user.id)
+          .single();
+
+        if (profileError || !userProfile) {
+          console.error('Failed to retrieve user profile:', profileError);
+          showToast('Could not retrieve user profile.', 'error');
+          await supabase.auth.signOut();
+          return;
+        }
+
+        // Verify approval status
+        if (!userProfile.is_approved && !userProfile.is_admin) {
+          await supabase.auth.signOut();
+          setRevokedModal({ 
+            message: 'Your access to the DLCF E-Library has been revoked by the administrator. Please contact the admin team if you believe this is an error.' 
+          });
+          return;
+        }
+
+        const loggedUser = {
+          id: userProfile.id,
+          email: userProfile.email,
+          name: userProfile.name,
+          isAdmin: !!userProfile.is_admin,
+          isSuperAdmin: !!userProfile.is_super_admin
+        };
+
+        setUser(loggedUser);
+        localStorage.setItem('dlcf_user', JSON.stringify(loggedUser));
+        setView(loggedUser.isAdmin ? 'admin' : 'library');
+        showToast(`Welcome back, ${loggedUser.name}!`);
         return;
       }
 
-      if (!authData.user) {
-        showToast('Login failed - no session returned', 'error');
-        return;
+      // 2. Fallback to Express backend login endpoint (for pre-migration/legacy users)
+      console.log('Standard Supabase Auth failed or profile missing. Trying legacy fallback...');
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        setUser(data.user);
+        localStorage.setItem('dlcf_user', JSON.stringify(data.user));
+        setView(data.user.isAdmin ? 'admin' : 'library');
+        showToast(`Welcome back, ${data.user.name}!`);
+      } else {
+        if (res.status === 403 && data.error === 'Access Revoked') {
+          setRevokedModal({ message: data.message });
+        } else {
+          showToast(data.error || authError?.message || 'Login failed', 'error');
+        }
       }
-
-      // 2. Fetch user profile details from public.users table (allowed via RLS select policy auth.uid() = id)
-      const { data: userProfile, error: profileError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authData.user.id)
-        .single();
-
-      if (profileError || !userProfile) {
-        console.error('Failed to retrieve user profile:', profileError);
-        showToast('Could not retrieve user profile.', 'error');
-        await supabase.auth.signOut();
-        return;
-      }
-
-      // 3. Verify approval status
-      if (!userProfile.is_approved && !userProfile.is_admin) {
-        await supabase.auth.signOut();
-        setRevokedModal({ 
-          message: 'Your access to the DLCF E-Library has been revoked by the administrator. Please contact the admin team if you believe this is an error.' 
-        });
-        return;
-      }
-
-      const loggedUser = {
-        id: userProfile.id,
-        email: userProfile.email,
-        name: userProfile.name,
-        isAdmin: !!userProfile.is_admin,
-        isSuperAdmin: !!userProfile.is_super_admin
-      };
-
-      setUser(loggedUser);
-      localStorage.setItem('dlcf_user', JSON.stringify(loggedUser));
-      setView(loggedUser.isAdmin ? 'admin' : 'library');
-      showToast(`Welcome back, ${loggedUser.name}!`);
     } catch (err: any) {
       console.error('Login error:', err);
       showToast(err.message || 'Login failed', 'error');
@@ -493,12 +509,16 @@ export default function App() {
         return;
       }
 
-      // 2. Insert profile record into public.users table (allowed via RLS insert policy)
+      // 2. Hash the password to satisfy the public.users NOT NULL database constraint
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // 3. Insert profile record into public.users table (allowed via RLS insert policy)
       const { error: insertError } = await supabase
         .from('users')
         .insert([{
           id: authData.user.id,
           email,
+          password: hashedPassword,
           name,
           is_approved: true, // Keep original auto-approved behavior
           is_admin: false
